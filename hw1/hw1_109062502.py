@@ -5,6 +5,8 @@ from random import seed
 import random
 import math
 import matplotlib.pyplot as plt
+from sklearn.manifold import TSNE
+import sys
 
 def ReadImageData(s):
     ''' 
@@ -248,7 +250,46 @@ def UpdateParam(param, grads, learning_rate = 0.1):
     param["b2"] = param["b2"] - learning_rate * grads["db2"]
     return param
 
-def TrainModel(x, y, x_valid, y_valid, n_hidden, mini_batch, max_epoch, learning_rate):
+def DrawTSNE(x, y, memo, tsne, img_name = "test"):
+    '''
+    Introduction:
+        Draw TSNE graph, and save img file
+    Arguments:
+        x-- origin dataset (numbers of dataset, 784)
+        y -- model predict labels (numbers of dataset, 10)
+        memo -- cache of x, so no need to repeat downsampling
+        tsne -- calculate the TSNE result or not
+        img_name -- name u want to save
+    Returns:
+        memo -- cache of x, so no need to repeat downsampling
+    '''
+    if tsne == False:
+        return []
+
+    _y = np.zeros((y.shape[0]))
+    for i in range(len(y)):
+        _y[i] = np.argmax(y[i])
+    
+    target_ids = range(10)
+    # self-define colors
+    colors = 'r', 'g', 'b', 'c', 'm', 'y', 'k', '#A52A2A', 'orange', 'purple'
+
+    # do ... long time work
+    # if no size do once.
+    if len(memo) == 0:
+        memo = TSNE(n_components=2, n_iter = 500).fit_transform(x)
+    print('TSNE {} done!'.format(img_name))
+    
+    # Draw scatter
+    for i, c in zip(target_ids, colors):
+        plt.scatter(memo[_y == i, 0], memo[_y == i, 1], c=c, label=i)
+    plt.legend()
+    plt.savefig('./'+img_name)
+    plt.close()
+
+    return memo
+
+def TrainModel(x, y, x_valid, y_valid, n_hidden, mini_batch, max_epoch, learning_rate, tsne):
     '''
     Introduction:
         2-layer neuron network
@@ -263,6 +304,7 @@ def TrainModel(x, y, x_valid, y_valid, n_hidden, mini_batch, max_epoch, learning
         mini_batch -- batch_size of each train
         max_epoch -- stop param
         learning_rate -- step of learning
+        tsne -- calculate the TSNE result or not
     Returns:
         param -- final param learn by the model
     '''
@@ -277,6 +319,9 @@ def TrainModel(x, y, x_valid, y_valid, n_hidden, mini_batch, max_epoch, learning
     # Initialize 
     param = InitParam(n_input, n_hidden, n_output)
 
+    # Tsne cache
+    Tsne_cache = []
+
     for epoch in range(0, max_epoch):
 
         # each mini-batch
@@ -290,9 +335,15 @@ def TrainModel(x, y, x_valid, y_valid, n_hidden, mini_batch, max_epoch, learning
             grads = Backward(param, cache, x_batch, y_batch)
             param = UpdateParam(param, grads, learning_rate)
 
+
         # Observation predict data
         train_p = Predict(x, param)
         valid_p = Predict(x_valid, param)
+
+        # Draw TSNE
+        Tsne_cache = DrawTSNE(x_valid.T, valid_p.T, Tsne_cache, tsne, str(epoch)+'_valid_draw')
+
+        # Calculate loss
         train_loss = CrossEncropy(y, train_p) / x.shape[1]
         valid_loss = CrossEncropy(y_valid, valid_p) / x_valid.shape[1]
         print('epoch: {}, train_loss: {:.6f}, validation_loss: {:.6f}, val_acc: {:.4f}'.format(epoch, train_loss, valid_loss, CalAcc(valid_p, y_valid)))
@@ -307,10 +358,17 @@ def TrainModel(x, y, x_valid, y_valid, n_hidden, mini_batch, max_epoch, learning
     plt.legend()
     plt.title('Show loss')
     plt.show()
+    plt.close()
 
     return param
 
 if __name__ == "__main__":
+    # Read argv
+    tsne = False
+    for arg in sys.argv:
+        if arg == "tsne" or arg == "TSNE":
+            tsne = True
+
     X = ReadImageData('./MNIST/train-images-idx3-ubyte.gz')
     Y = ReadImageLabel('./MNIST/train-labels-idx1-ubyte.gz')
     X_test = ReadImageData('./MNIST/t10k-images-idx3-ubyte.gz')
@@ -328,10 +386,13 @@ if __name__ == "__main__":
     Y_train, Y_valid = Y[:, :d], Y[:, d:]
 
     # start training model
-    param = TrainModel(X_train, Y_train, X_valid, Y_valid, n_hidden = 500, mini_batch = 60, max_epoch = 15, learning_rate = 0.1)
+    param = TrainModel(X_train, Y_train, X_valid, Y_valid, n_hidden = 500, mini_batch = 60, max_epoch = 15, learning_rate = 0.1, tsne = tsne)
 
     # Predict test data
     Y_test = oneHotEncode(Y_test)
     X_test = X_test.T
     p = Predict(X_test, param)
     print('test acc: {:.4f}%'.format(CalAcc(p, Y_test)))
+    
+    # Test data, TSNE
+    DrawTSNE(X_test.T, Y_test.T, [], tsne)
